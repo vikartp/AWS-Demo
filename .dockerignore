@@ -1,0 +1,12 @@
+**/node_modules
+**/dist
+**/build
+.git
+.gitignore
+*.md
+.env
+.env.*
+cdk.out
+coverage
+monitoring/grafana/data
+monitoring/prometheus/data

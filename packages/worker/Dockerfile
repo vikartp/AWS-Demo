@@ -1,21 +1,28 @@
-FROM node:20-alpine AS development
+# ============================================
+# DocuMind Worker - Development Dockerfile
+# ============================================
+FROM node:20-alpine
 
 RUN corepack enable && corepack prepare pnpm@latest --activate
 
 WORKDIR /app
 
-COPY package.json pnpm-workspace.yaml pnpm-lock.yaml* ./
+# Copy workspace root files
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml .npmrc ./
+
+# Copy package.json for all workspace packages needed
 COPY packages/shared/package.json ./packages/shared/
 COPY packages/worker/package.json ./packages/worker/
 
+# Install dependencies
 RUN pnpm install --frozen-lockfile || pnpm install
 
+# Copy source code and config only
 COPY tsconfig.base.json ./
-COPY packages/shared/ ./packages/shared/
-COPY packages/worker/ ./packages/worker/
-
-WORKDIR /app/packages/shared
-RUN pnpm build
+COPY packages/shared/tsconfig.json ./packages/shared/
+COPY packages/shared/src/ ./packages/shared/src/
+COPY packages/worker/tsconfig.json ./packages/worker/
+COPY packages/worker/src/ ./packages/worker/src/
 
 WORKDIR /app/packages/worker
 
