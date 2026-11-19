@@ -1,0 +1,22 @@
+import dotenv from 'dotenv';
+dotenv.config();
+
+export const config = {
+  port: parseInt(process.env.PORT || '3001', 10),
+  nodeEnv: process.env.NODE_ENV || 'development',
+  mongoUri: process.env.MONGODB_URI || 'mongodb://mongo:27017/documind',
+  corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:5173',
+  uploadDir: process.env.UPLOAD_DIR || '/tmp/uploads',
+
+  // AI service config (mock in local, Bedrock in AWS)
+  aiServiceUrl: process.env.AI_SERVICE_URL || 'http://mock-ai:3003',
+  aiProvider: (process.env.AI_PROVIDER || 'mock') as 'mock' | 'bedrock',
+
+  // Storage config
+  storageProvider: (process.env.STORAGE_PROVIDER || 'local') as 'local' | 's3',
+  s3Bucket: process.env.S3_BUCKET || '',
+  s3Region: process.env.S3_REGION || 'us-east-1',
+
+  // Queue config
+  queueProvider: (process.env.QUEUE_PROVIDER || 'local') as 'local' | 'sqs',
+} as const;
