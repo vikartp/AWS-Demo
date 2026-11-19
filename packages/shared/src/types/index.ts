@@ -1,4 +1,4 @@
-// ===== User Types =====
+// ===== User & Auth Types =====
 export interface User {
   id: string;
   cognitoId: string;
@@ -6,6 +6,27 @@ export interface User {
   displayName: string;
   createdAt: Date;
   updatedAt: Date;
+}
+
+export interface RegisterRequest {
+  email: string;
+  displayName: string;
+  password: string;
+}
+
+export interface LoginRequest {
+  email: string;
+  password: string;
+}
+
+export interface AuthResponse {
+  user: {
+    id: string;
+    email: string;
+    displayName: string;
+  };
+  token: string;
+  expiresIn: string;
 }
 
 // ===== Document Types =====
@@ -40,6 +61,15 @@ export interface UpdateDocumentRequest {
   description?: string;
   category?: string;
   tags?: string[];
+}
+
+export interface DocumentQuery {
+  search?: string;
+  category?: string;
+  tag?: string;
+  status?: DocumentStatus;
+  page?: number;
+  limit?: number;
 }
 
 // ===== AI Types =====
@@ -85,6 +115,16 @@ export interface Job {
   updatedAt: Date;
 }
 
+export interface QueueJobPayload {
+  jobId: string;
+  documentId: string;
+  userId: string;
+  filePath: string;
+  s3Key: string;
+  mimeType: string;
+  operation: 'summarize' | 'embed' | 'process';
+}
+
 // ===== Conversation Types =====
 export interface ConversationMessage {
   role: 'user' | 'assistant';
@@ -118,6 +158,7 @@ export interface ApiResponse<T> {
     page?: number;
     limit?: number;
     total?: number;
+    totalPages?: number;
   };
 }
 

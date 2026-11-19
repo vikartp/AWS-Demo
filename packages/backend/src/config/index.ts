@@ -19,4 +19,5 @@ export const config = {
 
   // Queue config
   queueProvider: (process.env.QUEUE_PROVIDER || 'local') as 'local' | 'sqs',
+  workerUrl: process.env.WORKER_URL || 'http://worker:3004',
 } as const;

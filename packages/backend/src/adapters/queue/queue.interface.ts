@@ -3,6 +3,8 @@ export interface QueueMessage {
   documentId: string;
   userId: string;
   s3Key: string;
+  filePath?: string;
+  mimeType?: string;
   operation: 'summarize' | 'embed' | 'process';
 }
 

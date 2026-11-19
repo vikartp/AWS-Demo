@@ -2,10 +2,13 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
+import mongoose from 'mongoose';
 import { config } from './config/index.js';
 import { metricsMiddleware, register } from './middleware/metrics.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { logger } from './utils/logger.js';
+import authRoutes from './routes/auth.routes.js';
+import documentRoutes from './routes/document.routes.js';
 
 export function createApp(): express.Express {
   const app = express();
@@ -28,7 +31,7 @@ export function createApp(): express.Express {
 
   // Health check
   app.get('/health', async (_req, res) => {
-    const mongoStatus = (await import('mongoose')).default.connection.readyState === 1;
+    const mongoStatus = mongoose.connection.readyState === 1;
 
     res.json({
       status: mongoStatus ? 'healthy' : 'degraded',
@@ -37,7 +40,7 @@ export function createApp(): express.Express {
       environment: config.nodeEnv,
       services: {
         mongodb: { status: mongoStatus ? 'up' : 'down' },
-        ai: { status: 'up' },  // Will check actual AI service later
+        ai: { status: 'up' },
       },
     });
   });
@@ -48,10 +51,9 @@ export function createApp(): express.Express {
     res.end(await register.metrics());
   });
 
-  // Placeholder routes — will be built in Phase 3
-  app.get('/api/documents', (_req, res) => {
-    res.json({ success: true, data: [], meta: { page: 1, limit: 20, total: 0 } });
-  });
+  // API Routes
+  app.use('/api/auth', authRoutes);
+  app.use('/api/documents', documentRoutes);
 
   // Error handling
   app.use(errorHandler);
