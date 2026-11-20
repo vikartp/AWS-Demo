@@ -10,32 +10,32 @@ import { logger } from '../../utils/logger.js';
 export class LocalQueueAdapter implements IQueueAdapter {
   private workerUrl: string;
 
-  constructor() {
-    this.workerUrl = config.workerUrl;
+    constructor() {
+      this.workerUrl = config.workerUrl;
+    }
+
+  async sendMessage(message: QueueMessage): Promise < void> {
+      logger.info(`[LocalQueue] Dispatching job ${message.jobId} to worker for document ${message.documentId}`);
+
+        // Asynchronously dispatch job without blocking the HTTP response
+        setImmediate(async () => {
+          try {
+            const response = await fetch(`${this.workerUrl}/jobs/process`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(message),
+            });
+
+            if (!response.ok) {
+              logger.error(`[LocalQueue] Worker rejected job ${message.jobId}: ${response.statusText}`);
+            } else {
+              logger.info(`[LocalQueue] Worker acknowledged job ${message.jobId}`);
+            }
+          } catch (error) {
+            logger.error(`[LocalQueue] Failed to reach worker at ${this.workerUrl}`, {
+              error: (error as Error).message,
+            });
+          }
+      });
+    }
   }
-
-  async sendMessage(message: QueueMessage): Promise<void> {
-    logger.info(`[LocalQueue] Dispatching job ${message.jobId} to worker for document ${message.documentId}`);
-
-    // Asynchronously dispatch job without blocking the HTTP response
-    setImmediate(async () => {
-      try {
-        const response = await fetch(`${this.workerUrl}/jobs/process`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(message),
-        });
-
-        if (!response.ok) {
-          logger.error(`[LocalQueue] Worker rejected job ${message.jobId}: ${response.statusText}`);
-        } else {
-          logger.info(`[LocalQueue] Worker acknowledged job ${message.jobId}`);
-        }
-      } catch (error) {
-        logger.error(`[LocalQueue] Failed to reach worker at ${this.workerUrl}`, {
-          error: (error as Error).message,
-        });
-      }
-    });
-  }
-}
