@@ -162,14 +162,25 @@ export class BackendClient {
   }
 
   // ===== AI Services =====
+  async getAiInfo() {
+    const response = await this.client.get('/api/ai/info');
+    return response.data;
+  }
+
   async askQuestion(documentId: string, question: string, userId: string) {
     const end = backendCallDuration.startTimer({ service: 'ai', operation: 'ask' });
     try {
-      const response = await this.client.post('/api/ai/ask', {
-        documentId,
-        question,
-        userId,
-      });
+      const response = await this.client.post(
+        '/api/ai/ask',
+        {
+          documentId,
+          question,
+          userId,
+        },
+        {
+          headers: { 'x-user-id': userId },
+        },
+      );
       end();
       return response.data;
     } catch (error) {

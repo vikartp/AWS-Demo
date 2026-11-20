@@ -6,6 +6,7 @@ import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
 import { DocumentsPage } from './pages/DocumentsPage';
 import { DocumentDetailPage } from './pages/DocumentDetailPage';
+import { ChatPage } from './pages/ChatPage';
 import { useAuthStore } from './store/authStore';
 
 // Protected Route Guard
@@ -16,19 +17,6 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
   }
   return <>{children}</>;
 };
-
-// Placeholder Chat Page (Ready for Phase 5)
-const ChatPage: React.FC = () => (
-  <div className="max-w-4xl mx-auto px-4 py-16 text-center space-y-4">
-    <div className="w-14 h-14 bg-purple-100 text-purple-600 rounded-2xl flex items-center justify-center mx-auto">
-      <span className="text-2xl">🤖</span>
-    </div>
-    <h1 className="text-2xl font-bold text-gray-900">AI Conversational Assistant & RAG</h1>
-    <p className="text-sm text-gray-600 max-w-md mx-auto">
-      Retrieval-Augmented Generation (RAG) using Titan Embeddings & Claude Haiku will be integrated in <strong>Phase 5</strong>.
-    </p>
-  </div>
-);
 
 // Placeholder Dashboard Page
 const DashboardPage: React.FC = () => (

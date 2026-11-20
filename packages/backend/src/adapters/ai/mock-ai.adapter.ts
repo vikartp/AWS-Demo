@@ -8,11 +8,13 @@ import { logger } from '../../utils/logger.js';
  * for local development and testing purposes only.
  */
 export class MockAIAdapter implements IAIAdapter {
+  readonly providerName = 'mock';
+  readonly modelName = 'mock-claude-3-haiku';
   private baseUrl: string;
 
   constructor() {
     this.baseUrl = config.aiServiceUrl;
-    logger.info('Using MOCK AI adapter - not connected to Amazon Bedrock');
+    logger.info('[AI] Initialized MockAIAdapter (Local simulation via mock-ai container)');
   }
 
   async summarize(params: SummarizeParams): Promise<AISummarizeResult> {

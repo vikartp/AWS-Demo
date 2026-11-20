@@ -11,6 +11,7 @@
     "test": "echo \"No tests yet\""
   },
   "dependencies": {
+    "@aws-sdk/client-bedrock-runtime": "^3.1172.0",
     "@documind/shared": "workspace:*",
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.5",

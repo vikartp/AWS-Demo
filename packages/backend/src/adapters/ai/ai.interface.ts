@@ -29,6 +29,8 @@ export interface AIChatResult {
 }
 
 export interface IAIAdapter {
+  readonly providerName: string;
+  readonly modelName: string;
   summarize(params: SummarizeParams): Promise<AISummarizeResult>;
   embed(params: EmbedParams): Promise<AIEmbedResult>;
   chat(params: ChatParams): Promise<AIChatResult>;

@@ -49,4 +49,30 @@ export const DOCUMENT_CATEGORIES = [
   'Other',
 ] as const;
 
-export type DocumentCategory = typeof DOCUMENT_CATEGORIES[number];
+export type DocumentCategory = (typeof DOCUMENT_CATEGORIES)[number];
+
+export interface AiSource {
+  chunkId: string;
+  documentId: string;
+  title?: string;
+  chunkText: string;
+  score: number;
+}
+
+export interface AskQuestionResponse {
+  answer: string;
+  sources: AiSource[];
+  tokensUsed: {
+    input: number;
+    output: number;
+  };
+  provider: string;
+  model: string;
+}
+
+export interface AiInfoResponse {
+  provider: string;
+  model: string;
+  isMock: boolean;
+  description: string;
+}

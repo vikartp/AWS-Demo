@@ -4,6 +4,11 @@ import mongoose from 'mongoose';
 import fs from 'fs/promises';
 import path from 'path';
 import dotenv from 'dotenv';
+import {
+  BedrockRuntimeClient,
+  ConverseCommand,
+  InvokeModelCommand,
+} from '@aws-sdk/client-bedrock-runtime';
 import { QueueJobPayload } from '@documind/shared';
 
 dotenv.config();
@@ -11,10 +16,27 @@ dotenv.config();
 const PORT = parseInt(process.env.PORT || '3004', 10);
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://mongo:27017/documind';
 const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://mock-ai:3003';
+const AI_PROVIDER = process.env.AI_PROVIDER || 'mock';
+const AWS_REGION = process.env.AWS_REGION || 'us-east-1';
+const BEDROCK_CHAT_MODEL =
+  process.env.BEDROCK_CHAT_MODEL_ID || 'anthropic.claude-3-haiku-20240307-v1:0';
+const BEDROCK_EMBED_MODEL =
+  process.env.BEDROCK_EMBED_MODEL_ID || 'amazon.titan-embed-text-v2:0';
 const UPLOAD_DIR = process.env.UPLOAD_DIR || '/app/uploads';
 
 const app = express();
 app.use(express.json());
+
+// Bedrock client if enabled
+let bedrockClient: BedrockRuntimeClient | null = null;
+if (AI_PROVIDER === 'bedrock') {
+  try {
+    bedrockClient = new BedrockRuntimeClient({ region: AWS_REGION });
+    console.log(`[Worker] Initialized AWS Bedrock Client in ${AWS_REGION}`);
+  } catch (err) {
+    console.warn(`[Worker] Could not initialize Bedrock Client: ${(err as Error).message}`);
+  }
+}
 
 // Metrics
 const register = new client.Registry();
@@ -43,23 +65,42 @@ const workerActiveJobs = new client.Gauge({
 
 const workerJobTokensUsed = new client.Counter({
   name: 'worker_job_tokens_used_total',
-  help: 'Total number of AI tokens used during worker summarization',
+  help: 'Total number of AI tokens used during worker operations',
   labelNames: ['operation', 'direction'],
   registers: [register],
 });
 
-// Minimal Document model for updating status & summary
+// Document & Chunk MongoDB Models
 const DocumentSchema = new mongoose.Schema(
   {
     status: String,
     summary: String,
     title: String,
     fileName: String,
+    userId: String,
   },
   { collection: 'documents', timestamps: true },
 );
 
 const DocumentModel = mongoose.model('WorkerDocument', DocumentSchema);
+
+const DocumentChunkSchema = new mongoose.Schema(
+  {
+    documentId: { type: String, required: true, index: true },
+    userId: { type: String, required: true, index: true },
+    chunkIndex: { type: Number, required: true },
+    text: { type: String, required: true },
+    embedding: { type: [Number], required: true },
+    tokenCount: { type: Number, default: 0 },
+    metadata: { type: mongoose.Schema.Types.Mixed, default: {} },
+  },
+  {
+    collection: 'document_chunks',
+    timestamps: { createdAt: 'createdAt', updatedAt: false },
+  },
+);
+
+const DocumentChunkModel = mongoose.model('WorkerDocumentChunk', DocumentChunkSchema);
 
 // Connect to MongoDB
 async function initDb() {
@@ -72,12 +113,112 @@ async function initDb() {
 }
 initDb();
 
+// Helper: Semantic Text Chunker
+function chunkText(text: string, chunkSize = 800, overlap = 150): string[] {
+  const cleaned = text.trim();
+  if (cleaned.length <= chunkSize) {
+    return [cleaned];
+  }
+
+  const chunks: string[] = [];
+  let start = 0;
+
+  while (start < cleaned.length) {
+    let end = start + chunkSize;
+    if (end >= cleaned.length) {
+      chunks.push(cleaned.substring(start));
+      break;
+    }
+
+    const slice = cleaned.substring(start, end);
+    let breakIdx = slice.lastIndexOf('\n\n');
+    if (breakIdx === -1 || breakIdx < chunkSize * 0.5) breakIdx = slice.lastIndexOf('\n');
+    if (breakIdx === -1 || breakIdx < chunkSize * 0.5) breakIdx = slice.lastIndexOf('. ');
+    if (breakIdx === -1 || breakIdx < chunkSize * 0.5) breakIdx = slice.lastIndexOf(' ');
+
+    if (breakIdx > chunkSize * 0.3) {
+      chunks.push(cleaned.substring(start, start + breakIdx).trim());
+      start = start + breakIdx + 1 - overlap;
+    } else {
+      chunks.push(cleaned.substring(start, end).trim());
+      start = end - overlap;
+    }
+    if (start < 0) start = 0;
+  }
+
+  return chunks.filter((c) => c.length > 20);
+}
+
+// AI Helper: Summarization
+async function generateSummary(text: string): Promise<{ summary: string; tokens: { input: number; output: number } }> {
+  if (bedrockClient && AI_PROVIDER === 'bedrock') {
+    const cmd = new ConverseCommand({
+      modelId: BEDROCK_CHAT_MODEL,
+      system: [{ text: 'You are an expert technical summarizer. Provide a concise executive summary.' }],
+      messages: [{ role: 'user', content: [{ text: `Summarize this text in 2-3 sentences:\n\n${text.substring(0, 8000)}` }] }],
+      inferenceConfig: { maxTokens: 300, temperature: 0.2 },
+    });
+    const res = await bedrockClient.send(cmd);
+    const summary = res.output?.message?.content?.[0]?.text || '';
+    return {
+      summary,
+      tokens: { input: res.usage?.inputTokens || 0, output: res.usage?.outputTokens || 0 },
+    };
+  }
+
+  // Fallback to local mock AI
+  const res = await fetch(`${AI_SERVICE_URL}/api/summarize`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text: text.substring(0, 8000), maxLength: 150 }),
+  });
+  if (!res.ok) throw new Error(`Mock summarize failed: ${res.statusText}`);
+  const data = (await res.json()) as { summary: string; tokensUsed?: { input: number; output: number } };
+  return {
+    summary: data.summary,
+    tokens: data.tokensUsed || { input: Math.ceil(text.length / 4), output: 50 },
+  };
+}
+
+// AI Helper: Embedding
+async function generateEmbedding(text: string): Promise<{ embedding: number[]; tokens: number }> {
+  if (bedrockClient && AI_PROVIDER === 'bedrock') {
+    const cmd = new InvokeModelCommand({
+      modelId: BEDROCK_EMBED_MODEL,
+      contentType: 'application/json',
+      accept: 'application/json',
+      body: Buffer.from(JSON.stringify({ inputText: text, dimensions: 1024, normalize: true })),
+    });
+    const res = await bedrockClient.send(cmd);
+    const body = JSON.parse(new TextDecoder().decode(res.body));
+    return {
+      embedding: body.embedding,
+      tokens: body.inputTextTokenCount || Math.ceil(text.length / 4),
+    };
+  }
+
+  // Fallback to local mock AI
+  const res = await fetch(`${AI_SERVICE_URL}/api/embed`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
+  });
+  if (!res.ok) throw new Error(`Mock embed failed: ${res.statusText}`);
+  const data = (await res.json()) as { embedding: number[]; tokensUsed?: { input: number } };
+  return {
+    embedding: data.embedding,
+    tokens: data.tokensUsed?.input || Math.ceil(text.length / 4),
+  };
+}
+
 // Health check
 app.get('/health', (_req: Request, res: Response) => {
   const isDbConnected = mongoose.connection.readyState === 1;
   res.json({
     status: isDbConnected ? 'healthy' : 'degraded',
     service: 'worker',
+    aiProvider: AI_PROVIDER,
+    bedrockEnabled: !!bedrockClient,
     uptime: process.uptime(),
     db: isDbConnected ? 'connected' : 'disconnected',
   });
@@ -95,16 +236,15 @@ app.post('/jobs/process', async (req: Request, res: Response) => {
   const endTimer = jobDuration.startTimer({ operation: payload.operation || 'process' });
   workerActiveJobs.inc();
 
-  console.log(`[Worker] Received job ${payload.jobId} for document ${payload.documentId}`);
+  console.log(`[Worker] Ingesting & processing document ${payload.documentId}`);
 
   try {
-    // 1. Resolve file path
+    // 1. Resolve file path and extract raw text
     const resolvedPath = payload.filePath || path.join(UPLOAD_DIR, payload.s3Key);
     let extractedText = '';
 
     try {
       const fileBytes = await fs.readFile(resolvedPath);
-      // For text, markdown, or json, decode as UTF-8
       if (
         payload.mimeType?.includes('text') ||
         payload.mimeType?.includes('json') ||
@@ -113,10 +253,12 @@ app.post('/jobs/process', async (req: Request, res: Response) => {
       ) {
         extractedText = fileBytes.toString('utf-8');
       } else {
-        // For other files, extract readable ASCII strings or fallback
-        extractedText = fileBytes.toString('utf-8').replace(/[^\x20-\x7E\t\r\n]/g, ' ').substring(0, 5000);
+        extractedText = fileBytes
+          .toString('utf-8')
+          .replace(/[^\x20-\x7E\t\r\n]/g, ' ')
+          .substring(0, 5000);
         if (extractedText.trim().length < 20) {
-          extractedText = `Document ${payload.s3Key} (MIME: ${payload.mimeType || 'unknown'}) uploaded successfully. Content analysis ready.`;
+          extractedText = `Document ${payload.s3Key} uploaded. Content processed.`;
         }
       }
     } catch (readErr) {
@@ -124,37 +266,42 @@ app.post('/jobs/process', async (req: Request, res: Response) => {
       extractedText = `Document ${payload.documentId} processed. Text extraction completed.`;
     }
 
-    // 2. Call AI service for summarization (Simulates Bedrock Claude Haiku)
+    // 2. AI Summarization
     let summary = '';
     try {
-      const aiResponse = await fetch(`${AI_SERVICE_URL}/api/summarize`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          text: extractedText.substring(0, 8000), // Bedrock context window
-          maxLength: 150,
-        }),
-      });
-
-      if (aiResponse.ok) {
-        const aiData = (await aiResponse.json()) as {
-          summary: string;
-          tokensUsed?: { input: number; output: number };
-        };
-        summary = aiData.summary;
-        if (aiData.tokensUsed) {
-          workerJobTokensUsed.inc({ operation: 'summarize', direction: 'input' }, aiData.tokensUsed.input);
-          workerJobTokensUsed.inc({ operation: 'summarize', direction: 'output' }, aiData.tokensUsed.output);
-        }
-      } else {
-        summary = `[Automated Summary] Document ${payload.s3Key} has been indexed.`;
-      }
-    } catch (aiErr) {
-      console.warn(`[Worker] AI summarization failed, using fallback: ${(aiErr as Error).message}`);
+      const sumResult = await generateSummary(extractedText);
+      summary = sumResult.summary;
+      workerJobTokensUsed.inc({ operation: 'summarize', direction: 'input' }, sumResult.tokens.input);
+      workerJobTokensUsed.inc({ operation: 'summarize', direction: 'output' }, sumResult.tokens.output);
+    } catch (sumErr) {
+      console.warn(`[Worker] Summarization failed: ${(sumErr as Error).message}`);
       summary = `[Automated Summary] Document indexed. Preview: ${extractedText.substring(0, 150)}...`;
     }
 
-    // 3. Update document in MongoDB
+    // 3. Document Chunking & Vector Embeddings (RAG Pipeline)
+    const chunks = chunkText(extractedText);
+    await DocumentChunkModel.deleteMany({ documentId: payload.documentId });
+
+    let chunkIndex = 0;
+    for (const chunkText of chunks) {
+      try {
+        const embResult = await generateEmbedding(chunkText);
+        await DocumentChunkModel.create({
+          documentId: payload.documentId,
+          userId: payload.userId,
+          chunkIndex,
+          text: chunkText,
+          embedding: embResult.embedding,
+          tokenCount: embResult.tokens,
+        });
+        workerJobTokensUsed.inc({ operation: 'embed', direction: 'input' }, embResult.tokens);
+        chunkIndex++;
+      } catch (embErr) {
+        console.warn(`[Worker] Chunk ${chunkIndex} embedding failed: ${(embErr as Error).message}`);
+      }
+    }
+
+    // 4. Update Document Status to 'ready'
     await DocumentModel.findByIdAndUpdate(payload.documentId, {
       status: 'ready',
       summary,
@@ -164,13 +311,17 @@ app.post('/jobs/process', async (req: Request, res: Response) => {
     endTimer();
     workerActiveJobs.dec();
 
-    console.log(`[Worker] Successfully processed document ${payload.documentId} (status: ready)`);
+    console.log(
+      `[Worker] Complete: Document ${payload.documentId} indexed with ${chunkIndex} vector chunks (status: ready)`,
+    );
+
     res.json({
       success: true,
       jobId: payload.jobId,
       documentId: payload.documentId,
       status: 'ready',
       summary,
+      chunksIndexed: chunkIndex,
     });
   } catch (error) {
     jobsProcessed.inc({ operation: payload.operation || 'process', status: 'error' });
@@ -178,7 +329,6 @@ app.post('/jobs/process', async (req: Request, res: Response) => {
     workerActiveJobs.dec();
     console.error(`[Worker] Job ${payload.jobId} failed:`, error);
 
-    // Update document status to error
     await DocumentModel.findByIdAndUpdate(payload.documentId, {
       status: 'error',
     }).catch(() => {});
@@ -192,13 +342,5 @@ app.post('/jobs/process', async (req: Request, res: Response) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`
-╔══════════════════════════════════════════╗
-║        DocuMind Background Worker        ║
-║                                          ║
-║  Metrics: http://localhost:${PORT}/metrics ║
-║  Health:  http://localhost:${PORT}/health  ║
-║  Jobs:    POST http://localhost:${PORT}/jobs/process
-╚══════════════════════════════════════════╝
-  `);
+  console.log(`[Worker] Running on port ${PORT} (AI Provider: ${AI_PROVIDER})`);
 });
