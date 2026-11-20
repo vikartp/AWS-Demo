@@ -6,7 +6,20 @@ settings:
 
 importers:
 
-  .: {}
+  .:
+    devDependencies:
+      '@types/form-data':
+        specifier: ^2.5.2
+        version: 2.5.2
+      axios:
+        specifier: ^1.21.1
+        version: 1.21.1(debug@4.4.3)
+      form-data:
+        specifier: ^4.0.6
+        version: 4.0.6
+      tsx:
+        specifier: ^4.23.15
+        version: 4.23.15
 
   packages/backend:
     dependencies:

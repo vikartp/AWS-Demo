@@ -11,7 +11,7 @@ import { LocalStorageAdapter } from '../adapters/storage/local-storage.adapter.j
 import { IQueueAdapter } from '../adapters/queue/queue.interface.js';
 import { LocalQueueAdapter } from '../adapters/queue/local-queue.adapter.js';
 import { AppError } from '../middleware/errorHandler.js';
-import { documentsTotal } from '../middleware/metrics.js';
+import { documentsTotal, documentUploadSizeBytes } from '../middleware/metrics.js';
 import { logger } from '../utils/logger.js';
 
 export class DocumentService {
@@ -50,6 +50,7 @@ export class DocumentService {
     });
 
     documentsTotal.inc({ status: 'processing' });
+    documentUploadSizeBytes.observe({ mime_type: file.mimetype }, file.size);
     logger.info(`Document created in database: ${doc.id} (user: ${userId})`);
 
     // 3. Dispatch async job to queue (simulates SQS in AWS)

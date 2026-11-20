@@ -1,0 +1,53 @@
+# Prometheus Alerting Rules for DocuMind
+groups:
+  - name: documind_alerts
+    rules:
+      # Alert 1: Service Availability
+      - alert: ServiceDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Service {{ $labels.job }} is DOWN"
+          description: "Target {{ $labels.instance }} in job {{ $labels.job }} has been unreachable for more than 1 minute."
+
+      # Alert 2: High HTTP Error Rate
+      - alert: HighHttpErrorRate
+        expr: (sum(rate(http_errors_total[2m])) by (route) / sum(rate(http_requests_total[2m])) by (route)) > 0.05
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High HTTP error rate (> 5%) detected"
+          description: "Route {{ $labels.route }} has an error rate of {{ $value | humanizePercentage }} over the last 2 minutes."
+
+      # Alert 3: High API Gateway / BFF Latency
+      - alert: HighBffLatency
+        expr: histogram_quantile(0.95, sum(rate(bff_http_request_duration_seconds_bucket[5m])) by (le, route)) > 1.5
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High P95 latency (> 1.5s) at BFF"
+          description: "BFF endpoint {{ $labels.route }} has a P95 latency of {{ $value }}s."
+
+      # Alert 4: Background Worker Job Failures
+      - alert: WorkerJobFailures
+        expr: sum(rate(worker_jobs_processed_total{status="error"}[5m])) > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Background worker job failure detected"
+          description: "Async worker jobs are experiencing failures in the last 5 minutes."
+
+      # Alert 5: Bedrock / AI Service Latency
+      - alert: HighAiLatency
+        expr: histogram_quantile(0.95, sum(rate(ai_request_duration_seconds_bucket[5m])) by (le, operation)) > 5
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High AI generation latency (> 5s)"
+          description: "AI operation {{ $labels.operation }} P95 latency has exceeded 5 seconds."

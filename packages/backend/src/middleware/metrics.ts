@@ -4,7 +4,7 @@ import client from 'prom-client';
 // Create a Registry
 export const register = new client.Registry();
 
-// Add default metrics (CPU, memory, etc.)
+// Add default metrics (CPU, memory, garbage collection, event loop lag)
 client.collectDefaultMetrics({ register });
 
 // Custom metrics
@@ -35,7 +35,7 @@ export const aiRequestDuration = new client.Histogram({
   name: 'ai_request_duration_seconds',
   help: 'Duration of AI/Bedrock requests in seconds',
   labelNames: ['operation', 'model'],
-  buckets: [0.5, 1, 2.5, 5, 10, 30],
+  buckets: [0.2, 0.5, 1, 2, 5, 10, 30],
   registers: [register],
 });
 
@@ -58,6 +58,14 @@ export const documentsTotal = new client.Gauge({
   name: 'documents_total',
   help: 'Total number of documents',
   labelNames: ['status'],
+  registers: [register],
+});
+
+export const documentUploadSizeBytes = new client.Histogram({
+  name: 'document_upload_size_bytes',
+  help: 'Size of uploaded documents in bytes',
+  labelNames: ['mime_type'],
+  buckets: [1024, 10240, 102400, 524288, 1048576, 5242880, 10485760], // 1KB to 10MB
   registers: [register],
 });
 

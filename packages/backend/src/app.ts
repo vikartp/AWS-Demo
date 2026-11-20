@@ -9,6 +9,7 @@ import { errorHandler } from './middleware/errorHandler.js';
 import { logger } from './utils/logger.js';
 import authRoutes from './routes/auth.routes.js';
 import documentRoutes from './routes/document.routes.js';
+import aiRoutes from './routes/ai.routes.js';
 
 export function createApp(): express.Express {
   const app = express();
@@ -54,6 +55,7 @@ export function createApp(): express.Express {
   // API Routes
   app.use('/api/auth', authRoutes);
   app.use('/api/documents', documentRoutes);
+  app.use('/api/ai', aiRoutes);
 
   // Error handling
   app.use(errorHandler);

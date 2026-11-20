@@ -35,6 +35,19 @@ const jobDuration = new client.Histogram({
   registers: [register],
 });
 
+const workerActiveJobs = new client.Gauge({
+  name: 'worker_active_jobs',
+  help: 'Number of currently processing background worker jobs',
+  registers: [register],
+});
+
+const workerJobTokensUsed = new client.Counter({
+  name: 'worker_job_tokens_used_total',
+  help: 'Total number of AI tokens used during worker summarization',
+  labelNames: ['operation', 'direction'],
+  registers: [register],
+});
+
 // Minimal Document model for updating status & summary
 const DocumentSchema = new mongoose.Schema(
   {
@@ -80,6 +93,7 @@ app.get('/metrics', async (_req: Request, res: Response) => {
 app.post('/jobs/process', async (req: Request, res: Response) => {
   const payload: QueueJobPayload = req.body;
   const endTimer = jobDuration.startTimer({ operation: payload.operation || 'process' });
+  workerActiveJobs.inc();
 
   console.log(`[Worker] Received job ${payload.jobId} for document ${payload.documentId}`);
 
@@ -123,8 +137,15 @@ app.post('/jobs/process', async (req: Request, res: Response) => {
       });
 
       if (aiResponse.ok) {
-        const aiData = (await aiResponse.json()) as { summary: string };
+        const aiData = (await aiResponse.json()) as {
+          summary: string;
+          tokensUsed?: { input: number; output: number };
+        };
         summary = aiData.summary;
+        if (aiData.tokensUsed) {
+          workerJobTokensUsed.inc({ operation: 'summarize', direction: 'input' }, aiData.tokensUsed.input);
+          workerJobTokensUsed.inc({ operation: 'summarize', direction: 'output' }, aiData.tokensUsed.output);
+        }
       } else {
         summary = `[Automated Summary] Document ${payload.s3Key} has been indexed.`;
       }
@@ -141,6 +162,7 @@ app.post('/jobs/process', async (req: Request, res: Response) => {
 
     jobsProcessed.inc({ operation: payload.operation || 'process', status: 'success' });
     endTimer();
+    workerActiveJobs.dec();
 
     console.log(`[Worker] Successfully processed document ${payload.documentId} (status: ready)`);
     res.json({
@@ -153,6 +175,7 @@ app.post('/jobs/process', async (req: Request, res: Response) => {
   } catch (error) {
     jobsProcessed.inc({ operation: payload.operation || 'process', status: 'error' });
     endTimer();
+    workerActiveJobs.dec();
     console.error(`[Worker] Job ${payload.jobId} failed:`, error);
 
     // Update document status to error

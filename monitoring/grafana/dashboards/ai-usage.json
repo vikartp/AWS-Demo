@@ -1,0 +1,210 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "purple", "value": null }]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 0 },
+      "id": 1,
+      "options": {
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "values": false }
+      },
+      "title": "Total AI Requests",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "sum(ai_requests_total) or vector(0)",
+          "legendFormat": "Total Calls"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "blue", "value": null }]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 0 },
+      "id": 2,
+      "options": {
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "values": false }
+      },
+      "title": "Total Tokens Consumed",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "sum(ai_tokens_used_total) + sum(worker_job_tokens_used_total) or vector(0)",
+          "legendFormat": "Tokens"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 1 },
+              { "color": "red", "value": 5 }
+            ]
+          },
+          "unit": "currencyUSD"
+        }
+      },
+      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 0 },
+      "id": 3,
+      "options": {
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "values": false }
+      },
+      "title": "Estimated Bedrock Cost",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "((sum(ai_tokens_used_total{direction=\"input\"}) or vector(0)) + (sum(worker_job_tokens_used_total{direction=\"input\"}) or vector(0))) * 0.0000008 + ((sum(ai_tokens_used_total{direction=\"output\"}) or vector(0)) + (sum(worker_job_tokens_used_total{direction=\"output\"}) or vector(0))) * 0.000004",
+          "legendFormat": "Estimated USD"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 3 },
+              { "color": "red", "value": 8 }
+            ]
+          },
+          "unit": "s"
+        }
+      },
+      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 0 },
+      "id": 4,
+      "options": {
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "values": false }
+      },
+      "title": "AI Latency (P95)",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(ai_request_duration_seconds_bucket[5m])) by (le)) or vector(0)",
+          "legendFormat": "P95 Latency"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 15,
+            "lineWidth": 2
+          },
+          "unit": "reqps"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 5 },
+      "id": 5,
+      "title": "AI Requests by Operation",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(ai_requests_total[2m])) by (operation, model)",
+          "legendFormat": "{{operation}} ({{model}})"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 50
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 5 },
+      "id": 6,
+      "title": "Token Consumption Rate (Input vs Output)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(ai_tokens_used_total{direction=\"input\"}[2m])) + sum(rate(worker_job_tokens_used_total{direction=\"input\"}[2m]))",
+          "legendFormat": "Input Tokens/s (Prompt)"
+        },
+        {
+          "expr": "sum(rate(ai_tokens_used_total{direction=\"output\"}[2m])) + sum(rate(worker_job_tokens_used_total{direction=\"output\"}[2m]))",
+          "legendFormat": "Output Tokens/s (Completion)"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          },
+          "unit": "s"
+        }
+      },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 13 },
+      "id": 7,
+      "title": "AI Request Duration by Operation (P50, P90)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.90, sum(rate(ai_request_duration_seconds_bucket[5m])) by (le, operation))",
+          "legendFormat": "{{operation}} (P90)"
+        },
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(ai_request_duration_seconds_bucket[5m])) by (le, operation))",
+          "legendFormat": "{{operation}} (P50)"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["documind", "ai", "bedrock", "tokens"],
+  "templating": { "list": [] },
+  "time": { "from": "now-30m", "to": "now" },
+  "title": "DocuMind - Amazon Bedrock & AI Usage",
+  "uid": "documind-ai-usage"
+}

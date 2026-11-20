@@ -19,6 +19,19 @@ export const httpRequestTotal = new client.Counter({
   registers: [register],
 });
 
+export const bffHttpErrorTotal = new client.Counter({
+  name: 'bff_http_errors_total',
+  help: 'Total number of BFF HTTP errors',
+  labelNames: ['method', 'route', 'status_code'],
+  registers: [register],
+});
+
+export const bffActiveRequests = new client.Gauge({
+  name: 'bff_active_requests',
+  help: 'Number of active in-flight requests at the BFF',
+  registers: [register],
+});
+
 export const backendCallDuration = new client.Histogram({
   name: 'bff_backend_call_duration_seconds',
   help: 'Duration of calls from BFF to backend services',
@@ -29,8 +42,10 @@ export const backendCallDuration = new client.Histogram({
 
 export function metricsMiddleware(req: Request, res: Response, next: NextFunction): void {
   const end = httpRequestDuration.startTimer();
+  bffActiveRequests.inc();
 
   res.on('finish', () => {
+    bffActiveRequests.dec();
     const labels = {
       method: req.method,
       route: req.route?.path || req.path,
@@ -38,6 +53,10 @@ export function metricsMiddleware(req: Request, res: Response, next: NextFunctio
     };
     end(labels);
     httpRequestTotal.inc(labels);
+
+    if (res.statusCode >= 400) {
+      bffHttpErrorTotal.inc(labels);
+    }
   });
 
   next();
